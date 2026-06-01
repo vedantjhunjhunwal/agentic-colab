@@ -1,19 +1,77 @@
+# render.yaml — Render Blueprint for Agentic AI DSL Colab
+# Deploy: push this repo to GitHub, then in Render: New → Blueprint → pick the repo.
+# Render reads this file and creates the service. It will PROMPT you for the
+# secret values marked "sync: false" (your Gmail address + App Password).
+#
+# Docs: https://render.com/docs/blueprint-spec
+
 services:
   - type: web
     name: agentic-colab
-    env: python
-    plan: free
-    buildCommand: pip install --upgrade pip && pip install -r requirements.txt
-    startCommand: gunicorn --bind 0.0.0.0:$PORT --workers 1 --threads 8 --timeout 300 app:app
+    runtime: docker            # if your Render account errors on this, change to: env: docker
+    plan: free                 # free tier works fully; see RENDER_STEPS.md to add a disk for persistence
+    region: singapore          # closest Render region to India
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
     healthCheckPath: /healthz
+    autoDeploy: true           # redeploy automatically on every git push
+
     envVars:
-      - key: PYTHON_VERSION
-        value: 3.11.9
-      - key: COLAB_DATA_DIR
-        value: /tmp/agentic-colab-data
+      # --- App config (safe to commit) ---
       - key: MPLBACKEND
         value: Agg
+      - key: COLAB_DATA_DIR
+        value: /data
       - key: ENABLE_2FA
-        value: false
+        value: "true"
+
+      # --- Database: persists notebooks + user accounts even on the free tier ---
+      # Set this in the Render dashboard to your Neon connection string
+      # (Environment → DATABASE_URL). Marked sync:false so Render does NOT manage
+      # or overwrite it. If left blank, the app falls back to local SQLite.
+      - key: DATABASE_URL
+        sync: false
+
+      # --- Gmail SMTP for OTP email ---
+      - key: MAIL_SERVER
+        value: smtp.gmail.com
+      - key: MAIL_PORT
+        value: "587"
+      - key: MAIL_USE_TLS
+        value: "true"
+      - key: MAIL_USE_SSL
+        value: "false"
+
+      # --- Secrets: Render prompts for these on deploy (never committed) ---
+      - key: MAIL_USERNAME       # your Gmail address, e.g. you@gmail.com
+        sync: false
+      - key: MAIL_PASSWORD       # your 16-char Gmail App Password
+        sync: false
+
+      # --- Flask session secret: Render auto-generates a strong random value ---
       - key: COLAB_SECRET
         generateValue: true
+
+      # --- Optional: only if you use Google sign-in ---
+      - key: OAUTH_REDIRECT_BASE  # set to your https://...onrender.com URL after first deploy
+        sync: false
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
+
+    # --- Persistent storage (PAID plan only) ---
+    # Free tier has an ephemeral disk (notebooks reset on restart/redeploy).
+    # To keep data permanently: change `plan: free` to `plan: starter` above,
+    # then UNCOMMENT the disk block below and redeploy.
+    #
+    # disk:
+    #   name: colab-data
+    #   mountPath: /data
+    #   sizeGB: 1
+
+# Persistent database: this project uses Neon (https://neon.tech) — a permanently
+# free external PostgreSQL. You set its connection string as the DATABASE_URL
+# environment variable in the Render dashboard (see deploy/RENDER_STEPS.md).
+# Nothing to define here — Neon lives outside Render, so your data is never tied
+# to the web service's disk.

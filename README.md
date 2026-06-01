@@ -134,38 +134,3 @@ static/css/     colab.css — Colab-faithful theme
 static/js/      markdown.js, highlight.js, dashboard.js, notebook.js
 deploy/         AWS_EDUCATE_STEPS.md (deployment guide)
 ```
-
----
-
-## Deploy on Render Free
-
-This project is Render-ready. Render gives a free public HTTPS URL such as:
-
-```text
-https://agentic-colab.onrender.com
-```
-
-Recommended Render settings:
-
-```text
-Runtime: Python 3
-Plan: Free
-Build Command: pip install --upgrade pip && pip install -r requirements.txt
-Start Command: gunicorn --bind 0.0.0.0:$PORT --workers 1 --threads 8 --timeout 300 app:app
-Health Check Path: /healthz
-```
-
-Environment variables:
-
-```text
-COLAB_DATA_DIR=/tmp/agentic-colab-data
-MPLBACKEND=Agg
-ENABLE_2FA=false
-COLAB_SECRET=<long random secret>
-```
-
-The repository also includes `render.yaml`, so it can be deployed as a Render Blueprint.
-
-See **`RENDER_DEPLOYMENT.md`** for the full deployment guide.
-
-> Note: Render free services may sleep after inactivity. The first request can take 30–60 seconds to wake up.

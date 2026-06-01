@@ -1,11 +1,25 @@
-.venv/
-__pycache__/
-*.pyc
+# Secrets — NEVER commit these
 .env
-instance/
+.env.*
+!.env.example
+*.key
+
+# Local data (notebooks, datasets, database)
 data/
 *.db
-*.sqlite
+*.db-wal
+*.db-shm
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+
+# OS / editor
 .DS_Store
-.idea/
+Thumbs.db
 .vscode/
+.idea/

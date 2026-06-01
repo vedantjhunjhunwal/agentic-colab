@@ -11,27 +11,110 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import secrets
 import sqlite3
 import time
 from pathlib import Path
 from typing import Dict, List, Optional
 
-# Resolve to an ABSOLUTE path so the database is found even if a notebook cell
-# changes the process working directory (a relative path like ./data would
-# otherwise break after running a cell). .resolve() makes it absolute.
+# ---------------------------------------------------------------------------
+#  Database backend selection
+#
+#  If DATABASE_URL is set (e.g. a free Postgres on Render / Neon / Supabase),
+#  use PostgreSQL so user accounts and notebooks PERSIST independently of the
+#  web server's disk — important on hosts with an ephemeral filesystem
+#  (like Render's free tier). Otherwise fall back to a local SQLite file,
+#  which is perfect for local development.
+# ---------------------------------------------------------------------------
+DATABASE_URL = os.environ.get("DATABASE_URL", "").strip()
+USE_POSTGRES = DATABASE_URL.startswith(("postgres://", "postgresql://"))
+
+# Filesystem paths (uploaded datasets + per-notebook working dirs).
+# Absolute so they survive a notebook cell changing the process cwd.
 DATA_ROOT = Path(os.environ.get("COLAB_DATA_DIR") or
                  (Path(__file__).resolve().parent / "data")).resolve()
 DB_PATH = (DATA_ROOT / "colab.db").resolve()
 FILES_ROOT = (DATA_ROOT / "users").resolve()
 
 
+if USE_POSTGRES:
+    import psycopg2
+    import psycopg2.extras
+
+    # Normalise scheme and ensure SSL (Render/Neon/Supabase require it).
+    _PG_DSN = DATABASE_URL
+    if _PG_DSN.startswith("postgres://"):
+        _PG_DSN = "postgresql://" + _PG_DSN[len("postgres://"):]
+    if "sslmode=" not in _PG_DSN:
+        _PG_DSN += ("&" if "?" in _PG_DSN else "?") + "sslmode=require"
+
+    # PRIMARY KEY (conflict target) for each table that uses INSERT OR REPLACE.
+    _PG_CONFLICT = {
+        "pending_registrations": "(email)",
+        "notebook_shares": "(notebook_id, email)",
+    }
+
+    def _translate(sql: str) -> str:
+        """Convert SQLite SQL to PostgreSQL dialect."""
+        sql = sql.replace("?", "%s")                          # placeholders
+        sql = re.sub(r"\bREAL\b", "DOUBLE PRECISION", sql)    # 8-byte timestamps
+        # INSERT OR REPLACE -> INSERT ... ON CONFLICT (...) DO UPDATE SET ...
+        m = re.search(r"INSERT\s+OR\s+REPLACE\s+INTO\s+(\w+)\s*\(([^)]*)\)",
+                      sql, re.IGNORECASE)
+        if m:
+            table = m.group(1)
+            cols = [c.strip() for c in m.group(2).split(",")]
+            conflict = _PG_CONFLICT.get(table, "")
+            sets = ", ".join(f"{c} = EXCLUDED.{c}" for c in cols)
+            sql = re.sub(r"INSERT\s+OR\s+REPLACE\s+INTO", "INSERT INTO",
+                         sql, flags=re.IGNORECASE).rstrip().rstrip(";")
+            if conflict:
+                sql += f" ON CONFLICT {conflict} DO UPDATE SET {sets}"
+        return sql
+
+    class _PGResult:
+        """Mimics the subset of sqlite3.Cursor that storage.py uses."""
+        def __init__(self, cur):
+            self._cur = cur
+        def fetchone(self):
+            return self._cur.fetchone()
+        def fetchall(self):
+            return self._cur.fetchall()
+        @property
+        def rowcount(self):
+            return self._cur.rowcount
+
+    class _PGConnection:
+        """Wraps a psycopg2 connection to look like a sqlite3 connection
+        (so the rest of storage.py works unchanged)."""
+        def __init__(self, dsn):
+            self._conn = psycopg2.connect(dsn, connect_timeout=15)
+        def execute(self, sql, params=()):
+            cur = self._conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            cur.execute(_translate(sql), params)
+            return _PGResult(cur)
+        def executescript(self, sql):
+            cur = self._conn.cursor()
+            cur.execute(_translate(sql))   # psycopg2 runs multiple ;-separated DDL
+            return self
+        def commit(self):
+            self._conn.commit()
+        def close(self):
+            try:
+                self._conn.close()
+            except Exception:
+                pass
+
+
 def _now() -> float:
     return time.time()
 
 
-def _connect() -> sqlite3.Connection:
-    # Ensure the data directory exists before opening (idempotent, cheap).
+def _connect():
+    """Return a DB connection — PostgreSQL if DATABASE_URL is set, else SQLite."""
+    if USE_POSTGRES:
+        return _PGConnection(_PG_DSN)
     DATA_ROOT.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(str(DB_PATH))
     conn.row_factory = sqlite3.Row
@@ -51,6 +134,7 @@ def init_db():
             name      TEXT,
             picture   TEXT,
             provider  TEXT,
+            password_hash TEXT,
             created_at REAL
         );
         CREATE TABLE IF NOT EXISTS notebooks (
@@ -87,12 +171,17 @@ def init_db():
         );
         """
     )
-    # Add password_hash column if it doesn't exist (idempotent migration)
-    try:
-        conn.execute("ALTER TABLE users ADD COLUMN password_hash TEXT")
+    # Backward-compat migration for older SQLite databases created before the
+    # password_hash column existed. (Fresh DBs already have it from CREATE TABLE.)
+    if USE_POSTGRES:
+        conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash TEXT")
         conn.commit()
-    except Exception:
-        pass  # column already exists
+    else:
+        try:
+            conn.execute("ALTER TABLE users ADD COLUMN password_hash TEXT")
+            conn.commit()
+        except Exception:
+            pass  # column already exists
     conn.commit()
     conn.close()
 
