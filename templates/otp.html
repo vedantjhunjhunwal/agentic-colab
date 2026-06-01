@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>
+    {% if purpose == '2fa' %}Two-step verification{% elif purpose == 'register' %}Verify email{% else %}Enter reset code{% endif %}
+    · Agentic AI DSL Colab
+  </title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Google+Sans:wght@400;500;700&family=Roboto:wght@400;500&family=Roboto+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 56 32'%3E%3Cpath d='M21 7.34A10 10 0 1 0 21 24.66' fill='none' stroke='%23F9AB00' stroke-width='6' stroke-linecap='round'/%3E%3Ccircle cx='40' cy='16' r='10' fill='none' stroke='%23E8710A' stroke-width='6'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/colab.css') }}">
+  <style>
+    .otp-heading {
+      font-size: 22px; font-weight: 500; margin: 0 0 6px; color: var(--text-primary);
+    }
+    .otp-sub {
+      font-size: 14px; color: var(--text-secondary); line-height: 1.5; margin: 0 0 28px;
+    }
+    .otp-sub strong { color: var(--text-primary); }
+    .otp-boxes {
+      display: flex; gap: 10px; justify-content: center; margin-bottom: 24px;
+    }
+    .otp-box {
+      width: 48px; height: 56px; border: 2px solid var(--border-medium); border-radius: 8px;
+      font-size: 24px; font-weight: 600; text-align: center; outline: none;
+      font-family: 'Roboto Mono', monospace; color: var(--text-primary);
+      transition: border-color .15s, box-shadow .15s; caret-color: transparent;
+    }
+    .otp-box:focus { border-color: var(--blue); box-shadow: 0 0 0 3px rgba(26,115,232,.18); }
+    .otp-box.filled { border-color: var(--blue); background: #f0f4ff; }
+    .otp-box.error { border-color: var(--error) !important; background: #fff5f5; animation: shake .3s; }
+    @keyframes shake {
+      0%,100%{transform:translateX(0)} 25%{transform:translateX(-4px)} 75%{transform:translateX(4px)}
+    }
+    .resend-row { text-align: center; margin-top: 16px; font-size: 13px; color: var(--text-secondary); }
+    .resend-btn { background: none; border: none; color: var(--blue); cursor: pointer;
+                  font-size: 13px; font-family: inherit; padding: 0; }
+    .resend-btn:disabled { color: var(--text-faint); cursor: default; }
+    .security-icon { display: flex; justify-content: center; margin-bottom: 16px; color: var(--blue); }
+    .security-icon svg { width: 40px; height: 40px; }
+  </style>
+</head>
+<body>
+<div class="login-wrap">
+  <div class="login-card">
+    <div class="security-icon">
+      {% if purpose == '2fa' %}
+      <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5zm0 10.99h7c-.53 4.12-3.28 7.79-7 8.94V12H5V6.3l7-3.11v8.8z"/></svg>
+      {% elif purpose == 'register' %}
+      <svg viewBox="0 0 24 24" fill="currentColor"><path d="M20 4H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2zm0 14H4V8l8 5 8-5v10zm-8-7L4 6h16z"/></svg>
+      {% else %}
+      <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg>
+      {% endif %}
+    </div>
+
+    <h2 class="otp-heading">
+      {% if purpose == '2fa' %}Two-step verification
+      {% elif purpose == 'register' %}Verify your email
+      {% else %}Enter reset code
+      {% endif %}
+    </h2>
+    <p class="otp-sub">
+      {% if purpose == '2fa' %}
+        For your security, we sent a 6-digit code to<br><strong>{{ masked_email }}</strong>
+      {% elif purpose == 'register' %}
+        We sent a verification code to<br><strong>{{ masked_email }}</strong><br>
+        Check your inbox (and spam folder).
+      {% else %}
+        Enter the 6-digit code we sent to<br><strong>{{ masked_email }}</strong>
+      {% endif %}
+    </p>
+
+    {% if error %}<div class="auth-error" id="otpError">{{ error }}</div>{% endif %}
+
+    <form method="post" action="{{ url_for('auth_verify_otp') }}" id="otpForm">
+      <input type="hidden" name="purpose" value="{{ purpose }}">
+      <input type="hidden" name="otp" id="otpHidden">
+
+      <div class="otp-boxes" id="otpBoxes">
+        <input class="otp-box" type="text" inputmode="numeric" maxlength="1" pattern="[0-9]" aria-label="Digit 1">
+        <input class="otp-box" type="text" inputmode="numeric" maxlength="1" pattern="[0-9]" aria-label="Digit 2">
+        <input class="otp-box" type="text" inputmode="numeric" maxlength="1" pattern="[0-9]" aria-label="Digit 3">
+        <input class="otp-box" type="text" inputmode="numeric" maxlength="1" pattern="[0-9]" aria-label="Digit 4">
+        <input class="otp-box" type="text" inputmode="numeric" maxlength="1" pattern="[0-9]" aria-label="Digit 5">
+        <input class="otp-box" type="text" inputmode="numeric" maxlength="1" pattern="[0-9]" aria-label="Digit 6">
+      </div>
+
+      <button class="btn primary" type="submit" id="verifyBtn"
+              style="width:100%;height:44px;justify-content:center" disabled>
+        Verify code
+      </button>
+    </form>
+
+    <div class="resend-row">
+      Didn't receive it?
+      <button class="resend-btn" id="resendBtn" onclick="resend()" disabled>
+        Resend code (<span id="countdown">60</span>s)
+      </button>
+    </div>
+
+    <div style="text-align:center;margin-top:20px">
+      <a href="{{ url_for('login') }}" class="auth-link" style="font-size:13px">
+        ← Back to sign in
+      </a>
+    </div>
+  </div>
+</div>
+
+<script>
+const boxes    = Array.from(document.querySelectorAll('.otp-box'));
+const hidden   = document.getElementById('otpHidden');
+const verifyBtn = document.getElementById('verifyBtn');
+const resendBtn = document.getElementById('resendBtn');
+const countdown = document.getElementById('countdown');
+
+// Auto-focus first box
+boxes[0] && boxes[0].focus();
+
+function updateHidden() {
+  const val = boxes.map(b => b.value).join('');
+  hidden.value = val;
+  verifyBtn.disabled = val.length < 6;
+  boxes.forEach(b => b.classList.toggle('filled', b.value !== ''));
+}
+
+boxes.forEach((box, i) => {
+  box.addEventListener('input', e => {
+    const v = e.target.value.replace(/\D/g, '');
+    box.value = v.slice(-1);
+    if (v && i < 5) boxes[i + 1].focus();
+    updateHidden();
+  });
+  box.addEventListener('keydown', e => {
+    if (e.key === 'Backspace') {
+      if (!box.value && i > 0) { boxes[i - 1].focus(); boxes[i - 1].value = ''; updateHidden(); }
+      else { box.value = ''; updateHidden(); }
+    }
+    if (e.key === 'ArrowLeft'  && i > 0) boxes[i - 1].focus();
+    if (e.key === 'ArrowRight' && i < 5) boxes[i + 1].focus();
+    // Allow Ctrl+V
+  });
+  box.addEventListener('paste', e => {
+    e.preventDefault();
+    const paste = (e.clipboardData || window.clipboardData).getData('text').replace(/\D/g, '');
+    paste.split('').forEach((ch, j) => { if (j < 6) boxes[j].value = ch; });
+    boxes[Math.min(paste.length, 5)].focus();
+    updateHidden();
+    if (hidden.value.length === 6) setTimeout(() => document.getElementById('otpForm').submit(), 100);
+  });
+});
+
+// Auto-submit when all 6 digits entered by typing
+document.getElementById('otpForm').addEventListener('input', () => {
+  if (hidden.value.length === 6) {
+    setTimeout(() => {
+      if (!document.querySelector('.otp-box:focus')) document.getElementById('otpForm').submit();
+    }, 300);
+  }
+});
+
+// Resend countdown
+let secs = 60;
+const timer = setInterval(() => {
+  secs--;
+  countdown.textContent = secs;
+  if (secs <= 0) {
+    clearInterval(timer);
+    resendBtn.disabled = false;
+    resendBtn.innerHTML = 'Resend code';
+  }
+}, 1000);
+
+async function resend() {
+  resendBtn.disabled = true;
+  resendBtn.textContent = 'Sending…';
+  try {
+    const r = await fetch('{{ url_for("auth_resend_otp") }}', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: '{}'
+    });
+    const d = await r.json();
+    if (d.error) {
+      resendBtn.textContent = 'Failed — try again';
+      resendBtn.disabled = false;
+    } else {
+      resendBtn.textContent = 'Sent ✓';
+      setTimeout(() => { resendBtn.textContent = 'Resend code'; }, 3000);
+    }
+  } catch(e) {
+    resendBtn.disabled = false;
+    resendBtn.textContent = 'Resend code';
+  }
+}
+
+// Shake on error
+{% if error %}
+boxes.forEach(b => { b.classList.add('error'); b.value = ''; });
+setTimeout(() => { boxes.forEach(b => b.classList.remove('error')); boxes[0].focus(); updateHidden(); }, 600);
+{% endif %}
+</script>
+</body>
+</html>

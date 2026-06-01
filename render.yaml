@@ -1,0 +1,19 @@
+services:
+  - type: web
+    name: agentic-colab
+    env: python
+    plan: free
+    buildCommand: pip install --upgrade pip && pip install -r requirements.txt
+    startCommand: gunicorn --bind 0.0.0.0:$PORT --workers 1 --threads 8 --timeout 300 app:app
+    healthCheckPath: /healthz
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.9
+      - key: COLAB_DATA_DIR
+        value: /tmp/agentic-colab-data
+      - key: MPLBACKEND
+        value: Agg
+      - key: ENABLE_2FA
+        value: false
+      - key: COLAB_SECRET
+        generateValue: true

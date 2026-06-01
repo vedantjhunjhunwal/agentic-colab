@@ -1,0 +1,22 @@
+version: "3.9"
+services:
+  colab:
+    build: .
+    ports:
+      - "8080:8080"
+    volumes:
+      - colab_data:/data
+    environment:
+      - COLAB_DATA_DIR=/data
+      - PORT=8080
+      # Uncomment and fill in for Google sign-in:
+      # - GOOGLE_CLIENT_ID=your_client_id
+      # - GOOGLE_CLIENT_SECRET=your_client_secret
+      # Uncomment for LLM assistant:
+      # - AGENT_LLM_PROVIDER=openai
+      # - OPENAI_API_KEY=sk-...
+      # - GOOGLE_API_KEY=AIza...
+    restart: unless-stopped
+
+volumes:
+  colab_data:

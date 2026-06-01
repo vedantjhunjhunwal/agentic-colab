@@ -1,0 +1,419 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ notebook.name }} · Agentic AI DSL Colab</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Google+Sans:wght@400;500;700&family=Roboto:wght@400;500&family=Roboto+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 56 32'%3E%3Cpath d='M21 7.34A10 10 0 1 0 21 24.66' fill='none' stroke='%23F9AB00' stroke-width='6' stroke-linecap='round'/%3E%3Ccircle cx='40' cy='16' r='10' fill='none' stroke='%23E8710A' stroke-width='6'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/colab.css') }}">
+</head>
+<body>
+<div class="nb-app">
+
+  <!-- APP BAR -->
+  <div class="appbar">
+    <a href="{{ url_for('dashboard') }}" class="co-mark" title="Back to notebooks" aria-label="Home">
+      <svg viewBox="0 0 56 32" width="36" height="22" xmlns="http://www.w3.org/2000/svg">
+        <defs><linearGradient id="cg" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0" stop-color="#F9AB00"/><stop offset="1" stop-color="#E8710A"/>
+        </linearGradient></defs>
+        <path d="M21 7.34A10 10 0 1 0 21 24.66" fill="none" stroke="url(#cg)" stroke-width="6" stroke-linecap="round"/>
+        <circle cx="40" cy="16" r="10" fill="none" stroke="url(#cg)" stroke-width="6"/>
+      </svg>
+    </a>
+    <div class="nb-titlebox">
+      <div class="title-row">
+        <div class="nb-title" id="nbTitle" contenteditable="true" spellcheck="false">{{ notebook.name }}</div>
+        {% if notebook.shared %}
+          <span class="shared-badge" title="Shared with you by {{ owner_email }}">Shared</span>
+        {% endif %}
+        <button class="icon-btn sm star" title="Star"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 17.27l-5.18 3.04 1.4-5.9-4.6-3.97 6.04-.5L12 4l2.34 5.94 6.04.5-4.6 3.97 1.4 5.9z"/></svg></button>
+      </div>
+      <div class="menubar" id="menubar">
+        <div class="menu" data-menu>
+          <button class="menu-label">File</button>
+          <div class="menu-pop">
+            <button class="menu-item" data-action="new">New notebook</button>
+            <button class="menu-item" data-action="rename">Rename<span class="sc">F2</span></button>
+            <button class="menu-item" data-action="save">Save<span class="sc">Ctrl+S</span></button>
+            <div class="menu-sep"></div>
+            <button class="menu-item" data-action="download-ipynb">Download .ipynb</button>
+            <button class="menu-item" data-action="download-py">Download .py</button>
+            <div class="menu-sep"></div>
+            <a class="menu-item" href="{{ url_for('dashboard') }}">Open notebook…</a>
+            <a class="menu-item" href="{{ url_for('logout') }}">Sign out</a>
+          </div>
+        </div>
+        <div class="menu" data-menu>
+          <button class="menu-label">Edit</button>
+          <div class="menu-pop">
+            <button class="menu-item" data-action="insert-code">Insert code cell</button>
+            <button class="menu-item" data-action="insert-text">Insert text cell</button>
+            <div class="menu-sep"></div>
+            <button class="menu-item" data-action="clear-outputs">Clear all outputs</button>
+            <button class="menu-item" data-action="delete-cell">Delete selected cell</button>
+            <div class="menu-sep"></div>
+            <button class="menu-item" data-action="find">Find and replace<span class="sc">Ctrl+H</span></button>
+          </div>
+        </div>
+        <div class="menu" data-menu>
+          <button class="menu-label">View</button>
+          <div class="menu-pop">
+            <button class="menu-item" data-action="toggle-toc">Table of contents</button>
+            <button class="menu-item" data-action="toggle-files">Files</button>
+            <button class="menu-item" data-action="toggle-assistant">Assistant</button>
+            <div class="menu-sep"></div>
+            <button class="menu-item" data-action="manual">AIDL syntax manual</button>
+          </div>
+        </div>
+        <div class="menu" data-menu>
+          <button class="menu-label">Insert</button>
+          <div class="menu-pop">
+            <button class="menu-item" data-action="insert-code">Code cell (Python)</button>
+            <button class="menu-item" data-action="insert-aidl">Code cell (AIDL)</button>
+            <button class="menu-item" data-action="insert-text">Text cell</button>
+          </div>
+        </div>
+        <div class="menu" data-menu>
+          <button class="menu-label">Runtime</button>
+          <div class="menu-pop">
+            <button class="menu-item" data-action="run-all">Run all<span class="sc">Ctrl+F9</span></button>
+            <button class="menu-item" data-action="run-before">Run cells before</button>
+            <button class="menu-item" data-action="run-after">Run this and after</button>
+            <div class="menu-sep"></div>
+            <button class="menu-item" data-action="restart">Restart runtime</button>
+            <button class="menu-item" data-action="restart-run-all">Restart and run all</button>
+          </div>
+        </div>
+        <div class="menu" data-menu>
+          <button class="menu-label">Tools</button>
+          <div class="menu-pop">
+            <button class="menu-item" data-action="manual">AIDL syntax manual</button>
+            <button class="menu-item" data-action="assistant-settings">Assistant settings</button>
+            <button class="menu-item" data-action="toggle-snippets">Code snippets</button>
+            {% if is_owner %}<button class="menu-item" data-action="share">Share notebook</button>{% endif %}
+          </div>
+        </div>
+        <div class="menu" data-menu>
+          <button class="menu-label">Help</button>
+          <div class="menu-pop">
+            <button class="menu-item" data-action="manual">AIDL syntax manual</button>
+            <button class="menu-item" data-action="about">About Agentic AI DSL Colab</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <span class="spacer"></span>
+    <span class="save-state" id="saveState">All changes saved</span>
+    {% if is_owner %}
+    <button class="tool-btn share-appbar-btn" data-action="share" title="Share notebook">
+      <svg viewBox="0 0 24 24" fill="currentColor"><path d="M18 16.08a2.93 2.93 0 0 0-1.96.77L8.91 12.7A3.15 3.15 0 0 0 9 12a3.15 3.15 0 0 0-.09-.7l7.05-4.11A2.99 2.99 0 1 0 14.97 5a3.15 3.15 0 0 0 .09.7L8.01 9.81A3 3 0 1 0 8.01 14.19l7.12 4.16c-.05.23-.08.46-.08.7A2.92 2.92 0 1 0 18 16.08z"/></svg>
+      Share
+    </button>
+    {% endif %}
+    <button class="icon-btn" data-action="manual" title="AIDL syntax manual">
+      <svg viewBox="0 0 24 24" fill="currentColor"><path d="M18 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2zM8 4h8v8l-4-2.5L8 12z"/></svg>
+    </button>
+    <button class="icon-btn" data-action="assistant-settings" title="Settings">
+      <svg viewBox="0 0 24 24" fill="currentColor"><path d="M19.14 12.94a7.49 7.49 0 0 0 .05-.94 7.49 7.49 0 0 0-.05-.94l2.03-1.58a.5.5 0 0 0 .12-.64l-1.92-3.32a.5.5 0 0 0-.61-.22l-2.39.96a7.03 7.03 0 0 0-1.62-.94l-.36-2.54a.5.5 0 0 0-.5-.42h-3.84a.5.5 0 0 0-.5.42l-.36 2.54c-.59.24-1.13.56-1.62.94l-2.39-.96a.5.5 0 0 0-.61.22L2.71 8.84a.5.5 0 0 0 .12.64l2.03 1.58c-.03.31-.05.62-.05.94s.02.63.05.94l-2.03 1.58a.5.5 0 0 0-.12.64l1.92 3.32c.14.24.42.34.66.22l2.39-.96c.49.38 1.03.7 1.62.94l.36 2.54c.05.24.25.42.5.42h3.84c.25 0 .45-.18.5-.42l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.24.12.52.02.66-.22l1.92-3.32a.5.5 0 0 0-.12-.64l-2.03-1.58zM12 15.5A3.5 3.5 0 1 1 12 8.5a3.5 3.5 0 0 1 0 7z"/></svg>
+    </button>
+    <div style="position:relative">
+      <button class="avatar" id="avatarBtn" title="{{ user.email }}">
+        {% if user.picture %}<img src="{{ user.picture }}" alt="">{% else %}{{ (user.name or user.email)[0]|upper }}{% endif %}
+      </button>
+      <div class="menu-pop" id="acctMenu" style="right:0;left:auto;min-width:220px;">
+        <div style="padding:10px 12px;border-bottom:1px solid var(--border-light);">
+          <div style="font-weight:500;">{{ user.name }}</div>
+          <div style="font-size:12px;color:var(--text-secondary);">{{ user.email }}</div>
+        </div>
+        <a class="menu-item" href="{{ url_for('dashboard') }}">Your notebooks</a>
+        <a class="menu-item" href="{{ url_for('logout') }}">Sign out</a>
+      </div>
+    </div>
+  </div>
+
+  <!-- TOOLBAR -->
+  <div class="toolbar">
+    <button class="cmd-search" data-action="manual" title="AIDL syntax manual">
+      <svg viewBox="0 0 24 24" fill="currentColor"><path d="M15.5 14h-.79l-.28-.27a6.5 6.5 0 1 0-.7.7l.27.28v.79l5 4.99L20.49 19zm-6 0A4.5 4.5 0 1 1 14 9.5 4.49 4.49 0 0 1 9.5 14z"/></svg>
+      Commands
+    </button>
+    <button class="tool-btn" data-action="insert-code">
+      <svg viewBox="0 0 24 24" fill="currentColor"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6z"/></svg> Code
+    </button>
+    <button class="tool-btn" data-action="insert-text">
+      <svg viewBox="0 0 24 24" fill="currentColor"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6z"/></svg> Text
+    </button>
+    <button class="tool-btn" data-action="run-all">
+      <svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg> Run all
+    </button>
+    <span class="spacer"></span>
+    <button class="connect-btn" id="connectBtn" data-action="restart" title="Runtime — click to restart">
+      <span class="dot"></span><span id="connectLabel">Connected</span>
+    </button>
+    <button class="icon-btn" id="assistToggleTop" data-action="toggle-assistant" title="Toggle assistant">
+      <svg viewBox="0 0 24 24" fill="currentColor"><path d="M20 2H4a2 2 0 0 0-2 2v18l4-4h14a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2zM7 9h10v2H7zm0 4h7v2H7z"/></svg>
+    </button>
+  </div>
+
+  <!-- BODY -->
+  <div class="nb-body">
+
+    <!-- icon rail -->
+    <div class="rail" id="rail">
+      <button class="icon-btn" data-panel="toc" title="Table of contents">
+        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M3 9h14V7H3zm0 4h14v-2H3zm0 4h14v-2H3zm16 0h2v-2h-2zm0-10v2h2V7zm0 6h2v-2h-2z"/></svg>
+      </button>
+      <button class="icon-btn" data-panel="find" title="Find and replace">
+        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M15.5 14h-.79l-.28-.27a6.5 6.5 0 1 0-.7.7l.27.28v.79l5 4.99L20.49 19zm-6 0A4.5 4.5 0 1 1 14 9.5 4.49 4.49 0 0 1 9.5 14z"/></svg>
+      </button>
+      <button class="icon-btn" data-panel="snippets" title="Code snippets">
+        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M9.4 16.6 4.8 12l4.6-4.6L8 6l-6 6 6 6zm5.2 0 4.6-4.6-4.6-4.6L16 6l6 6-6 6z"/></svg>
+      </button>
+      <button class="icon-btn" data-panel="secrets" title="Secrets / API keys">
+        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 1a5 5 0 0 0-5 5v3H6a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-9a2 2 0 0 0-2-2h-1V6a5 5 0 0 0-5-5zm3 8H9V6a3 3 0 0 1 6 0z"/></svg>
+      </button>
+      <button class="icon-btn" data-panel="files" title="Files">
+        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M10 4H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-8z"/></svg>
+      </button>
+    </div>
+
+    <!-- side panels -->
+    <div class="side" id="side">
+      <!-- TOC -->
+      <div class="side-panel" id="panelToc">
+        <div class="side-head"><span class="h">Table of contents</span>
+          <button class="icon-btn sm" data-panel-close title="Close"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg></button>
+        </div>
+        <div class="side-body"><ul class="toc-list" id="tocList"></ul></div>
+      </div>
+      <!-- Find -->
+      <div class="side-panel" id="panelFind" style="display:none">
+        <div class="side-head"><span class="h">Find and replace</span>
+          <button class="icon-btn sm" data-panel-close><svg viewBox="0 0 24 24" fill="currentColor"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg></button>
+        </div>
+        <div class="side-body panel-block">
+          <div class="find-row"><input id="findInput" type="text" placeholder="Find in cells"></div>
+          <div class="find-row"><input id="replaceInput" type="text" placeholder="Replace with"></div>
+          <div class="find-count" id="findCount"></div>
+          <div style="display:flex;gap:8px;margin-top:6px">
+            <button class="btn ghost" id="findNext">Find</button>
+            <button class="btn" id="replaceAll">Replace all</button>
+          </div>
+        </div>
+      </div>
+      <!-- Snippets -->
+      <div class="side-panel" id="panelSnippets" style="display:none">
+        <div class="side-head"><span class="h">Code snippets</span>
+          <button class="icon-btn sm" data-panel-close><svg viewBox="0 0 24 24" fill="currentColor"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg></button>
+        </div>
+        <div class="side-body" id="snippetList"></div>
+      </div>
+      <!-- Secrets -->
+      <div class="side-panel" id="panelSecrets" style="display:none">
+        <div class="side-head"><span class="h">API Keys</span>
+          <button class="icon-btn sm" data-panel-close><svg viewBox="0 0 24 24" fill="currentColor"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg></button>
+        </div>
+        <div class="side-body panel-block">
+          <p style="font-size:13px;color:var(--text-secondary);line-height:1.6">
+            The assistant works with <strong>no API key</strong>. To use an LLM, open
+            <button class="link-like" data-action="assistant-settings" style="border:none;background:none;color:var(--blue);cursor:pointer;padding:0">Assistant settings</button>.
+          </p>
+          <p style="font-size:12px;color:var(--text-faint);line-height:1.6;margin-top:10px">
+            For server-wide keys, set <code>AGENT_LLM_PROVIDER</code> and the matching
+            <code>OPENAI_API_KEY</code> / <code>GOOGLE_API_KEY</code>.
+          </p>
+        </div>
+      </div>
+      <!-- Files -->
+      <div class="side-panel" id="panelFiles" style="display:none">
+        <div class="side-head">
+          <span class="h">Files</span>
+          <button class="icon-btn sm" id="refreshFiles" title="Refresh"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M17.65 6.35A8 8 0 1 0 19.73 14h-2.08A6 6 0 1 1 12 6a5.9 5.9 0 0 1 4.2 1.8L13 11h7V4z"/></svg></button>
+          <button class="icon-btn sm" id="uploadBtn" title="Upload dataset"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M9 16h6v-6h4l-7-7-7 7h4zm-4 2h14v2H5z"/></svg></button>
+          <button class="icon-btn sm kaggle-trigger" id="kaggleBtn" title="Import from Kaggle" style="color:#20beff">
+            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M18.825 23.859a.63.63 0 0 1-.63.141l-4.065-5.064-4.636 5.064a.63.63 0 0 1-.944-.844l4.888-5.353-4.688-5.844a.63.63 0 0 1 .944-.844l4.436 5.268 4.065-4.468a.63.63 0 0 1 .944.844l-4.288 4.729 4.988 6.227a.63.63 0 0 1-.014.144zM5.188.111h1.688v24h-1.688V0z"/></svg>
+          </button>
+        </div>
+        <div class="side-body">
+          <div class="dropzone" id="dropzone">Drag &amp; drop a dataset here, or click <strong>Upload</strong></div>
+          <ul class="file-list" id="fileList"></ul>
+          <div class="path-hint">
+            Reference files by name:<br>
+            Python &nbsp;<code>pd.read_csv("data.csv")</code><br>
+            AIDL &nbsp;&nbsp;&nbsp;<code>load("data.csv")</code>
+          </div>
+        </div>
+      </div>
+      <input type="file" id="fileInput" class="hidden" multiple>
+    </div>
+
+    <!-- canvas -->
+    <div class="canvas" id="canvas">
+      <div class="canvas-inner">
+        <div id="cells"></div>
+      </div>
+    </div>
+
+    <!-- assistant -->
+    <aside class="assist" id="assist">
+      <div class="assist-head">
+        <span class="spark"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l2.09 5.26L19.5 8.5l-4 3.74L16.5 18 12 15.27 7.5 18l1-5.76-4-3.74 5.41-1.24z"/></svg></span>
+        <span class="t">Assistant</span>
+        <button class="icon-btn sm" data-action="assistant-settings" title="Settings"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M19.14 12.94a7.49 7.49 0 0 0 .05-.94 7.49 7.49 0 0 0-.05-.94l2.03-1.58a.5.5 0 0 0 .12-.64l-1.92-3.32a.5.5 0 0 0-.61-.22l-2.39.96a7.03 7.03 0 0 0-1.62-.94l-.36-2.54a.5.5 0 0 0-.5-.42h-3.84a.5.5 0 0 0-.5.42l-.36 2.54c-.59.24-1.13.56-1.62.94l-2.39-.96a.5.5 0 0 0-.61.22L2.71 8.84a.5.5 0 0 0 .12.64l2.03 1.58c-.03.31-.05.62-.05.94s.02.63.05.94l-2.03 1.58a.5.5 0 0 0-.12.64l1.92 3.32c.14.24.42.34.66.22l2.39-.96c.49.38 1.03.7 1.62.94l.36 2.54c.05.24.25.42.5.42h3.84c.25 0 .45-.18.5-.42l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.24.12.52.02.66-.22l1.92-3.32a.5.5 0 0 0-.12-.64l-2.03-1.58zM12 15.5A3.5 3.5 0 1 1 12 8.5a3.5 3.5 0 0 1 0 7z"/></svg></button>
+        <button class="icon-btn sm" data-action="toggle-assistant" title="Close"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg></button>
+      </div>
+      <div class="assist-sub">
+        Explains errors and helps with Python &amp; AIDL.
+        <div><span class="mode-chip" id="assistMode">No API key needed</span></div>
+      </div>
+      <div class="assist-settings" id="assistSettings">
+        <label>Mode</label>
+        <select id="provider">
+          <option value="">Built-in explainer (no API key)</option>
+          <option value="openai">OpenAI (needs key)</option>
+          <option value="gemini">Google Gemini (needs key)</option>
+        </select>
+        <div id="keyFields" style="display:none">
+          <label>API key</label>
+          <input id="apiKey" type="password" placeholder="sk-… or AIza…" autocomplete="off">
+          <label>Model (optional)</label>
+          <input id="model" type="text" placeholder="gpt-4o-mini / gemini-1.5-flash">
+        </div>
+        <div class="note">Keys stay in this browser session only — never stored on the server.</div>
+      </div>
+      <div class="assist-msgs" id="assistMsgs">
+        <div class="assist-empty" id="assistEmpty">
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l2.09 5.26L19.5 8.5l-4 3.74L16.5 18 12 15.27 7.5 18l1-5.76-4-3.74 5.41-1.24z"/></svg>
+          <div>Run a cell — if it errors, I'll explain why and how to fix it. You can also ask me anything about your code, datasets, or AIDL.</div>
+        </div>
+      </div>
+      <div class="assist-input">
+        <div class="row">
+          <textarea id="assistText" rows="1" placeholder="Ask the assistant…"></textarea>
+          <button class="send-btn" id="assistSend" title="Send"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M2.01 21 23 12 2.01 3 2 10l15 2-15 2z"/></svg></button>
+        </div>
+      </div>
+    </aside>
+  </div>
+
+  <!-- STATUS BAR -->
+  <div class="statusbar">
+    <span class="sb-item" data-action="restart" style="cursor:pointer" title="Restart runtime">
+      <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 6v3l4-4-4-4v3a8 8 0 1 0 8 8h-2a6 6 0 1 1-6-6z"/></svg>
+      <span id="kernelStatus">Ready</span>
+    </span>
+    <span class="sb-item"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M4 6h16v2H4zm0 5h16v2H4zm0 5h10v2H4z"/></svg> <span id="cellCount">0 cells</span></span>
+    <span class="spacer"></span>
+    <span class="sb-item" id="lastRun"></span>
+    <span class="sb-item" id="collabBadge" style="display:none"></span>
+  </div>
+</div>
+
+<!-- ==================== MODALS ==================== -->
+
+<!-- Manual -->
+<div class="modal-back" id="manualBack">
+  <div class="modal">
+    <div class="modal-head"><h3>AIDL syntax manual</h3><span class="spacer"></span>
+      <button class="icon-btn" id="manualClose"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg></button>
+    </div>
+    <div class="modal-body"><div class="md" id="manualBody">Loading…</div></div>
+    <div class="modal-foot"><span class="spacer"></span>
+      <button class="btn" id="manualInsert">Insert example cell</button>
+      <button class="btn primary" id="manualOk">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- Share -->
+<div class="modal-back" id="shareBack">
+  <div class="modal sm">
+    <div class="modal-head">
+      <h3>Share notebook</h3><span class="spacer"></span>
+      <button class="icon-btn" onclick="document.getElementById('shareBack').classList.remove('open')"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg></button>
+    </div>
+    <div class="modal-body">
+      <div style="margin-bottom:16px">
+        <label class="field-label">Add collaborator by email</label>
+        <div style="display:flex;gap:8px;margin-top:4px">
+          <input id="shareEmail" type="email" placeholder="colleague@example.com" style="flex:1" class="text-input">
+          <button class="btn primary" id="shareAddBtn">Add</button>
+        </div>
+        <div id="shareError" style="color:var(--error);font-size:12px;margin-top:4px;display:none"></div>
+      </div>
+      <div>
+        <label class="field-label">Collaborators</label>
+        <ul class="collab-list" id="collabList"><li style="color:var(--text-faint);font-size:13px">None yet</li></ul>
+      </div>
+    </div>
+    <div class="modal-foot"><span class="spacer"></span>
+      <button class="btn primary" onclick="document.getElementById('shareBack').classList.remove('open')">Done</button>
+    </div>
+  </div>
+</div>
+
+<!-- Kaggle import -->
+<div class="modal-back" id="kaggleBack">
+  <div class="modal sm">
+    <div class="modal-head">
+      <h3>Import from Kaggle</h3><span class="spacer"></span>
+      <button class="icon-btn" onclick="document.getElementById('kaggleBack').classList.remove('open')"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg></button>
+    </div>
+    <div class="modal-body">
+      <label class="field-label">Dataset slug <small style="color:var(--text-faint)">(owner/dataset-name)</small></label>
+      <input id="kaggleSlug" type="text" placeholder="uciml/iris" class="text-input" style="width:100%;margin-top:4px;box-sizing:border-box">
+      <p style="font-size:12px;color:var(--text-faint);margin:6px 0">e.g. <code>uciml/iris</code>, <code>shivamb/vehicle-claim-fraud-detection</code></p>
+      <details style="margin-top:12px">
+        <summary style="font-size:13px;cursor:pointer;color:var(--text-secondary)">Kaggle credentials (optional if set server-side)</summary>
+        <div style="margin-top:8px;display:flex;flex-direction:column;gap:8px">
+          <div>
+            <label class="field-label">Kaggle username</label>
+            <input id="kaggleUser" type="text" placeholder="kaggle_username" class="text-input" style="width:100%;box-sizing:border-box;margin-top:3px">
+          </div>
+          <div>
+            <label class="field-label">Kaggle API key</label>
+            <input id="kaggleKey" type="password" placeholder="From kaggle.com → Account → API Token" class="text-input" style="width:100%;box-sizing:border-box;margin-top:3px">
+          </div>
+        </div>
+      </details>
+      <div id="kaggleError" style="color:var(--error);font-size:12px;margin-top:8px;display:none"></div>
+      <div id="kaggleOk" style="color:#1a8754;font-size:13px;margin-top:8px;display:none"></div>
+    </div>
+    <div class="modal-foot"><span class="spacer"></span>
+      <button class="btn" onclick="document.getElementById('kaggleBack').classList.remove('open')">Cancel</button>
+      <button class="btn primary" id="kaggleImportBtn">Import dataset</button>
+    </div>
+  </div>
+</div>
+
+<!-- About -->
+<div class="modal-back" id="aboutBack">
+  <div class="modal sm">
+    <div class="modal-head"><h3>About Agentic AI DSL Colab</h3></div>
+    <div class="modal-body"><div class="md">
+      <p><strong>Agentic AI DSL Colab</strong> is a Google Colab–style notebook that runs <strong>Python 3</strong> and the Python-like <strong>AIDL</strong> language with first-class ML primitives: supervised, unsupervised, neural networks, deep learning, reinforcement learning, and generative/agentic AI — all in a few lines.</p>
+      <p>Upload datasets in the Files panel, install packages with <code>!pip install</code>, share notebooks with collaborators, and import datasets from Kaggle.</p>
+    </div></div>
+    <div class="modal-foot"><span class="spacer"></span><button class="btn primary" id="aboutOk">Close</button></div>
+  </div>
+</div>
+
+<div class="toast-wrap" id="toasts"></div>
+
+<script>
+  window.__NB__       = {{ notebook|tojson }};
+  window.__GOOGLE__   = {{ google_enabled|tojson }};
+  window.__ROLE__     = {{ role|tojson }};
+  window.__IS_OWNER__ = {{ is_owner|tojson }};
+  window.__COLLAB__   = {{ collaborators|tojson }};
+  window.__USER__     = {{ {'name': user.name, 'email': user.email}|tojson }};
+</script>
+<script src="{{ url_for('static', filename='js/markdown.js') }}"></script>
+<script src="{{ url_for('static', filename='js/highlight.js') }}"></script>
+<script src="{{ url_for('static', filename='js/notebook.js') }}"></script>
+</body>
+</html>

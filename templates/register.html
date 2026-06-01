@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Create account · Agentic AI DSL Colab</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Google+Sans:wght@400;500;700&family=Roboto:wght@400;500&family=Roboto+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 56 32'%3E%3Cpath d='M21 7.34A10 10 0 1 0 21 24.66' fill='none' stroke='%23F9AB00' stroke-width='6' stroke-linecap='round'/%3E%3Ccircle cx='40' cy='16' r='10' fill='none' stroke='%23E8710A' stroke-width='6'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/colab.css') }}">
+</head>
+<body>
+<div class="login-wrap">
+  <div class="login-card">
+    <div class="co-logo">
+      <span class="co-mark" aria-hidden="true">
+        <svg viewBox="0 0 56 32" width="56" height="32" xmlns="http://www.w3.org/2000/svg">
+          <defs><linearGradient id="cg" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0" stop-color="#F9AB00"/><stop offset="1" stop-color="#E8710A"/>
+          </linearGradient></defs>
+          <path d="M21 7.34A10 10 0 1 0 21 24.66" fill="none" stroke="url(#cg)" stroke-width="6" stroke-linecap="round"/>
+          <circle cx="40" cy="16" r="10" fill="none" stroke="url(#cg)" stroke-width="6"/>
+        </svg>
+      </span>
+    </div>
+    <h1>Create your account</h1>
+    <p class="sub">A verification code will be sent to your email.</p>
+
+    {% if error %}<div class="auth-error">{{ error }}</div>{% endif %}
+
+    <form method="post" action="{{ url_for('auth_register') }}" autocomplete="on" id="regForm">
+      <div class="field">
+        <label for="name">Full name</label>
+        <input id="name" name="name" type="text" placeholder="Ada Lovelace"
+               autocomplete="name" required value="{{ prefill_name or '' }}">
+      </div>
+      <div class="field">
+        <label for="email">Email</label>
+        <input id="email" name="email" type="email" placeholder="you@example.com"
+               autocomplete="email" required value="{{ prefill_email or '' }}">
+      </div>
+      <div class="field" style="position:relative">
+        <label for="password">Password <small style="color:var(--text-faint)">(min 8 chars)</small></label>
+        <input id="password" name="password" type="password" placeholder="Choose a strong password"
+               autocomplete="new-password" minlength="8" required>
+        <button type="button" class="pwd-toggle" onclick="togglePwd(this)" tabindex="-1" aria-label="Show">
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8a3 3 0 1 0 0 6 3 3 0 0 0 0-6z"/></svg>
+        </button>
+      </div>
+      <div class="field" style="position:relative">
+        <label for="confirm">Confirm password</label>
+        <input id="confirm" name="confirm" type="password" placeholder="Repeat your password"
+               autocomplete="new-password" minlength="8" required>
+        <button type="button" class="pwd-toggle" onclick="togglePwd(this)" tabindex="-1" aria-label="Show">
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8a3 3 0 1 0 0 6 3 3 0 0 0 0-6z"/></svg>
+        </button>
+      </div>
+
+      <!-- Password strength bar -->
+      <div class="pwd-strength" id="strengthBar" style="display:none">
+        <div class="pwd-strength-fill" id="strengthFill"></div>
+      </div>
+      <div id="strengthLabel" style="font-size:11px;color:var(--text-faint);margin-top:2px;min-height:16px"></div>
+
+      <button class="btn primary" type="submit" style="width:100%;height:44px;justify-content:center;margin-top:12px">
+        Create account &amp; verify email
+      </button>
+    </form>
+
+    <div class="auth-links" style="text-align:center;margin-top:16px">
+      Already have an account? <a href="{{ url_for('login') }}" class="auth-link">Sign in</a>
+    </div>
+  </div>
+</div>
+<script>
+function togglePwd(btn) {
+  const inp = btn.previousElementSibling;
+  inp.type = inp.type === 'password' ? 'text' : 'password';
+}
+const pwd = document.getElementById('password');
+const bar = document.getElementById('strengthBar');
+const fill = document.getElementById('strengthFill');
+const lbl = document.getElementById('strengthLabel');
+const labels = ['', 'Weak', 'Fair', 'Good', 'Strong'];
+const colors = ['', '#e53935', '#fb8c00', '#43a047', '#1a73e8'];
+pwd.addEventListener('input', () => {
+  const v = pwd.value;
+  bar.style.display = v ? 'block' : 'none';
+  let s = 0;
+  if (v.length >= 8) s++;
+  if (/[A-Z]/.test(v)) s++;
+  if (/[0-9]/.test(v)) s++;
+  if (/[^A-Za-z0-9]/.test(v)) s++;
+  fill.style.width = (s * 25) + '%';
+  fill.style.background = colors[s] || '#e53935';
+  lbl.textContent = labels[s] || '';
+  lbl.style.color = colors[s] || '#e53935';
+});
+document.getElementById('regForm').addEventListener('submit', e => {
+  if (pwd.value !== document.getElementById('confirm').value) {
+    e.preventDefault();
+    alert('Passwords do not match.');
+  }
+});
+</script>
+</body>
+</html>
