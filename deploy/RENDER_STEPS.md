@@ -9,15 +9,29 @@ or a **manual Web Service**. Both are below — pick one.
 
 ---
 
-## Step 1 — Get a Gmail App Password (for OTP email)
+## Step 1 — Set up Brevo for OTP email (Render blocks SMTP)
 
-1. Turn on 2-Step Verification: https://myaccount.google.com/security
-2. Create an App Password: https://myaccount.google.com/apppasswords
-   - App: **Mail**, Device: **Other** → name it "Agentic Colab" → **Generate**.
-3. Copy the 16-character password (spaces are fine — the app strips them).
-   You'll paste this as `MAIL_PASSWORD` in Render.
+Render (like most cloud hosts) **blocks outbound SMTP**, so Gmail/SMTP cannot
+send from Render. Instead we use **Brevo**, which sends email over an HTTPS API
+(port 443) — free, 300 emails/day, no credit card.
 
-> Use the App Password, NOT your normal Gmail password — Gmail will reject the latter.
+1. Sign up at https://www.brevo.com (free "Starter" plan).
+2. **Verify a sender address** so Brevo will send "from" it:
+   - Go to **Settings → Senders, Domains & Dedicated IPs → Senders → Add a sender**.
+   - Enter your name and an email you control (e.g. your Gmail `you@gmail.com`).
+   - Brevo emails you a confirmation link — click it to verify. This is the address
+     your OTP emails will come from (your `MAIL_FROM`).
+3. **Create an API key:**
+   - Go to **Settings → SMTP & API → API Keys → Generate a new API key**.
+   - Name it `agentic-colab`, click generate, and **copy the key** (starts with
+     `xkeysib-`). Save it temporarily — it's your `BREVO_API_KEY`.
+
+You now have two values for Part 4: your verified sender email (`MAIL_FROM`) and
+the API key (`BREVO_API_KEY`).
+
+> Prefer SendGrid? It works too — set `SENDGRID_API_KEY` instead of
+> `BREVO_API_KEY` (verify a Single Sender in SendGrid first). The app also
+> supports `RESEND_API_KEY`. Any one of them is enough.
 
 ---
 
@@ -37,8 +51,8 @@ or a **manual Web Service**. Both are below — pick one.
 2. Click **New → Blueprint**.
 3. Select your `agentic-colab` repository. Render detects `render.yaml`.
 4. Render shows the service it will create and **prompts for the secret values**:
-   - `MAIL_USERNAME` → your Gmail address (e.g. `you@gmail.com`)
-   - `MAIL_PASSWORD` → the 16-char App Password from Step 1
+   - `BREVO_API_KEY` → the API key from Step 1 (starts with `xkeysib-`)
+   - `MAIL_FROM` → your verified Brevo sender address (e.g. `you@gmail.com`)
    - `DATABASE_URL` → your Neon connection string (set up Neon first — see the
      **Database** section below; or leave it blank now and add it in the dashboard
      right after, before you create accounts you want to keep)
@@ -66,13 +80,11 @@ Skip to **Step 4**.
    | `MPLBACKEND` | `Agg` |
    | `COLAB_DATA_DIR` | `/data` |
    | `ENABLE_2FA` | `true` |
-   | `MAIL_SERVER` | `smtp.gmail.com` |
-   | `MAIL_PORT` | `587` |
-   | `MAIL_USE_TLS` | `true` |
-   | `MAIL_USERNAME` | your Gmail address |
-   | `MAIL_PASSWORD` | your 16-char App Password |
+   | `BREVO_API_KEY` | your Brevo API key (`xkeysib-...`) |
+   | `MAIL_FROM` | your verified Brevo sender email |
+   | `MAIL_FROM_NAME` | `Agentic AI DSL Colab` |
    | `COLAB_SECRET` | any long random string |
-   | `DATABASE_URL` | your Postgres connection string (see Database section) |
+   | `DATABASE_URL` | your Neon connection string (see Database section) |
 
    For `DATABASE_URL`: in Render, **New → PostgreSQL** (free), then copy its
    **Internal Connection String** into this variable. Without it, the app uses a
@@ -179,9 +191,10 @@ redeploys automatically. Or click **Manual Deploy → Deploy latest commit**.
 
 | Problem | Fix |
 |---------|-----|
-| OTP email never arrives | Check Render **Logs** for the `[MAIL]` line. `[MAIL] ENABLED` means it sent — check spam. `[MAIL] DISABLED` means `MAIL_USERNAME`/`MAIL_PASSWORD` aren't set. |
-| "credentials were rejected" in logs | You used your normal Gmail password — generate an **App Password** instead and update `MAIL_PASSWORD`. |
-| Mail times out | Rare on Render, but try `MAIL_PORT=465` and `MAIL_USE_SSL=true` (and `MAIL_USE_TLS=false`). |
+| OTP email never arrives | Check Render **Logs**. `[MAIL] ENABLED — ... Brevo` then `[MAIL] OTP sent` means it sent (check spam). `[MAIL] DISABLED` means `BREVO_API_KEY` isn't set. |
+| "rejected the API key" in logs | Wrong/expired `BREVO_API_KEY` — regenerate it in Brevo and update the env var. |
+| Email rejected / not sent | `MAIL_FROM` must be a **verified sender** in Brevo (Settings → Senders). |
+| `Network is unreachable` in logs | You're using SMTP, which Render blocks. Switch to Brevo: set `BREVO_API_KEY` + `MAIL_FROM`. |
 | App shows "Application failed to respond" | Check Logs; usually a build error. The app binds Render's `PORT` automatically, so don't set a `PORT` variable yourself. |
 | Slow first load | Free tier cold start — normal. Upgrade to Starter to stay always-on. |
 | Lost my notebooks after a redeploy | Free tier resets data; add a disk (see "Important notes" above). |
