@@ -1,5 +1,5 @@
 """Agentic AI DSL Colab — a Google Colab-style notebook with the Python-like
-AIDL (Agentic AI DSL) language, persistent storage, Google login, dataset
+AIDL (Agentic AI DSL) language, persistent storage, Supabase authentication, dataset
 import (upload + Kaggle), notebook sharing/collaboration, and a built-in
 agentic assistant.
 
@@ -31,8 +31,8 @@ def _load_env_file():
     except ImportError:
         print("=" * 64)
         print(" WARNING: python-dotenv is NOT installed.")
-        print(" Your .env file will NOT be loaded, so MAIL_USERNAME /")
-        print(" MAIL_PASSWORD will be missing and OTP email will not work.")
+        print(" Your .env file will NOT be loaded, so SUPABASE_URL /")
+        print(" SUPABASE_ANON_KEY will be missing and login will not work.")
         print("")
         print("   Fix:  pip install python-dotenv")
         print("")
@@ -69,10 +69,9 @@ if "windowsapps" in _sys.executable.lower() or \
     print("   • OR install Python from python.org (shorter path, recommended).")
     print("=" * 64)
 
-# Startup diagnostics — confirms whether mail credentials were picked up.
-# The password itself is NEVER printed, only whether it was found.
-print(f"[env] MAIL_USERNAME      : {os.getenv('MAIL_USERNAME') or '(not set)'}")
-print(f"[env] MAIL_PASSWORD found: {bool(os.getenv('MAIL_PASSWORD'))}")
+# Startup diagnostics for Supabase authentication.
+print(f"[env] SUPABASE_URL found     : {bool(os.getenv('SUPABASE_URL'))}")
+print(f"[env] SUPABASE_ANON_KEY found: {bool(os.getenv('SUPABASE_ANON_KEY'))}")
 
 from flask import (
     Flask, abort, jsonify, redirect, render_template, render_template_string,
@@ -85,8 +84,6 @@ except Exception:  # pragma: no cover
     ProxyFix = None
 
 import agent
-import auth
-import mailer
 import storage
 import supabase_auth
 from kernel import KernelManager
@@ -116,12 +113,9 @@ app.secret_key = _load_secret()
 app.config["MAX_CONTENT_LENGTH"] = 500 * 1024 * 1024  # 500 MB uploads
 
 storage.init_db()
-mailer.init_mail(app)
+supabase_auth.init_supabase()
 kernels = KernelManager()
 
-import time as _time_module  # noqa – used by reset_password
-
-ENABLE_2FA = os.getenv("ENABLE_2FA", "true").lower() != "false"
 
 
 # ---- helpers -------------------------------------------------------------
@@ -152,11 +146,6 @@ def accessible_notebook_or_404(notebook_id):
     return nb
 
 
-def _oauth_redirect_uri():
-    base = auth.configured_redirect_base()
-    if base:
-        return base + "/auth/google/callback"
-    return url_for("auth_google_callback", _external=True)
 
 
 # ==========================================================================
@@ -174,80 +163,44 @@ def login():
     if session.get("uid"):
         return redirect(url_for("dashboard"))
     return render_template("login.html",
-                           google_enabled=auth.is_google_configured(),
-                           supabase_enabled=supabase_auth.is_configured(),
                            error=request.args.get("error"),
                            prefill_email=request.args.get("prefill_email"))
 
 
-@app.route("/auth/demo", methods=["POST"])
-def auth_demo():
-    email = (request.form.get("email") or "").strip().lower()
-    name = (request.form.get("name") or "").strip()
-    if not email or "@" not in email:
-        email = f"guest_{secrets.token_hex(3)}@demo.local"
-        name = name or "Guest"
-    user = storage.upsert_user(email=email, name=name, provider="demo")
-    session["uid"] = user["id"]
-    return redirect(url_for("dashboard"))
-
-
-def _mask_email(email: str) -> str:
-    user, _, domain = email.partition("@")
-    return (user[:1] + "***@" + domain) if domain else "your email"
 
 
 # ==========================================================================
-#  Password-based login (+ 2FA OTP)
+#  Supabase email/password login
 # ==========================================================================
 @app.route("/auth/password", methods=["POST"])
 def auth_password_login():
-    from werkzeug.security import check_password_hash
     email = (request.form.get("email") or "").strip().lower()
     password = request.form.get("password", "")
     if not email or not password:
         return redirect(url_for("login", error="Email and password are required."))
-
-    # Supabase mode: keep the same login form, but verify the password through
-    # Supabase Auth over HTTPS. No SMTP/Resend OTP is needed on Render.
-    if supabase_auth.is_configured():
-        try:
-            data = supabase_auth.signin(email, password)
-            profile = supabase_auth.profile_from_auth_response(data, fallback_email=email)
-        except Exception as exc:  # noqa: BLE001
-            msg = str(exc) or "Could not sign in with Supabase."
-            if "Email not confirmed" in msg:
-                msg = "Please verify your email from the Supabase confirmation link, then sign in."
-            return redirect(url_for("login", error=msg, prefill_email=email))
-        user = storage.upsert_user(**profile)
-        session["uid"] = user["id"]
-        return redirect(url_for("dashboard"))
-
-    user = storage.get_user_by_email(email)
-    if not user or not user.get("password_hash"):
-        return redirect(url_for("login",
-            error="No account found with that email.", prefill_email=email))
-    if not check_password_hash(user["password_hash"], password):
-        return redirect(url_for("login", error="Incorrect password.", prefill_email=email))
-    if ENABLE_2FA:
-        otp = mailer.generate_otp()
-        storage.store_otp(email, mailer.hash_otp(otp), purpose="2fa")
-        result = mailer.send_otp(email, otp, "2fa")
-        if result:  # send failed
-            return redirect(url_for("login", error=result))
-        session["pending_2fa_uid"]   = user["id"]
-        session["pending_2fa_email"] = email
-        return redirect(url_for("auth_verify_otp_page", purpose="2fa"))
+    if not supabase_auth.is_configured():
+        return redirect(url_for("login", error="Supabase is not configured. Set SUPABASE_URL and SUPABASE_ANON_KEY in Render."))
+    try:
+        profile = supabase_auth.sign_in_with_password(email, password)
+    except Exception as exc:  # noqa: BLE001
+        return redirect(url_for("login", error=str(exc), prefill_email=email))
+    user = storage.upsert_user(
+        email=profile["email"],
+        name=profile.get("name") or profile["email"].split("@")[0],
+        picture=profile.get("picture", ""),
+        provider="supabase",
+    )
+    session.clear()
     session["uid"] = user["id"]
+    session["supabase_access_token"] = profile.get("access_token", "")
     return redirect(url_for("dashboard"))
 
 
 # ==========================================================================
-#  Registration with OTP email verification
+#  Supabase registration
 # ==========================================================================
 @app.route("/auth/register", methods=["GET", "POST"])
 def auth_register():
-    from werkzeug.security import generate_password_hash
     if request.method == "GET":
         return render_template("register.html",
                                error=request.args.get("error"),
@@ -270,115 +223,28 @@ def auth_register():
         return rereg("Password must be at least 8 characters.")
     if pwd != conf:
         return rereg("Passwords do not match.")
-    existing = storage.get_user_by_email(email)
-    if existing and existing.get("password_hash") and not supabase_auth.is_configured():
-        return rereg("An account already exists with that email. Sign in instead.")
+    if not supabase_auth.is_configured():
+        return rereg("Supabase is not configured. Set SUPABASE_URL and SUPABASE_ANON_KEY in Render.")
 
-    # Supabase mode: keep the same registration form, but let Supabase handle
-    # account creation and email verification. This avoids Resend/Gmail SMTP.
-    if supabase_auth.is_configured():
-        try:
-            data = supabase_auth.signup(email, pwd, name)
-            profile = supabase_auth.profile_from_auth_response(data, fallback_email=email, fallback_name=name)
-        except Exception as exc:  # noqa: BLE001
-            return rereg(str(exc) or "Could not create account with Supabase.")
-        # If Supabase email confirmations are disabled, a session may be returned
-        # immediately. If confirmations are enabled, ask the user to verify first.
-        if data.get("session") or data.get("access_token"):
-            user = storage.upsert_user(**profile)
-            session["uid"] = user["id"]
-            return redirect(url_for("dashboard"))
-        return redirect(url_for("login",
-            error="✓ Account created. Check your email, verify it, then sign in.",
-            prefill_email=email))
+    try:
+        profile = supabase_auth.sign_up(email=email, password=pwd, name=name)
+    except Exception as exc:  # noqa: BLE001
+        return rereg(str(exc))
 
-    pwd_hash = generate_password_hash(pwd, method="pbkdf2:sha256")
-    storage.store_pending_registration(email, name, pwd_hash)
-    otp = mailer.generate_otp()
-    storage.store_otp(email, mailer.hash_otp(otp), purpose="register")
-    result = mailer.send_otp(email, otp, "register")
-    if result:  # send failed (mail not configured or SMTP error)
-        storage.pop_pending_registration(email)
-        return rereg(result)
-    session["otp_flow_email"] = email
-    return redirect(url_for("auth_verify_otp_page", purpose="register"))
+    user = storage.upsert_user(
+        email=profile["email"],
+        name=profile.get("name") or name,
+        picture=profile.get("picture", ""),
+        provider="supabase",
+    )
+    session.clear()
+    session["uid"] = user["id"]
+    session["supabase_access_token"] = profile.get("access_token", "")
+    return redirect(url_for("dashboard"))
 
 
 # ==========================================================================
-#  OTP verification page + POST handler
-# ==========================================================================
-@app.route("/auth/otp", methods=["GET"])
-def auth_verify_otp_page():
-    purpose = request.args.get("purpose", "2fa")
-    error   = request.args.get("error")
-    if purpose == "2fa":
-        email = session.get("pending_2fa_email", "")
-    else:
-        email = session.get("otp_flow_email", "")
-    masked = _mask_email(email) if email else request.args.get("masked", "your email")
-    return render_template("otp.html", purpose=purpose, error=error, masked_email=masked)
-
-
-@app.route("/auth/otp", methods=["POST"])
-def auth_verify_otp():
-    purpose     = request.form.get("purpose", "2fa")
-    otp_entered = (request.form.get("otp") or "").strip()
-    if not otp_entered or len(otp_entered) != 6 or not otp_entered.isdigit():
-        return redirect(url_for("auth_verify_otp_page", purpose=purpose,
-                                error="Enter the 6-digit code."))
-    if purpose == "2fa":
-        email = session.get("pending_2fa_email", "")
-        uid   = session.get("pending_2fa_uid")
-    else:
-        email = session.get("otp_flow_email", "")
-        uid   = None
-    if not email:
-        return redirect(url_for("login", error="Session expired. Please try again."))
-    outcome = storage.verify_and_consume_otp(email, mailer.hash_otp(otp_entered), purpose)
-    if outcome == "expired":
-        return redirect(url_for("auth_verify_otp_page", purpose=purpose,
-                                error="This code has expired. Request a new one."))
-    if outcome != "ok":
-        return redirect(url_for("auth_verify_otp_page", purpose=purpose,
-                                error="Incorrect code — try again."))
-    if purpose == "2fa":
-        session.pop("pending_2fa_uid",   None)
-        session.pop("pending_2fa_email", None)
-        session["uid"] = uid
-        return redirect(url_for("dashboard"))
-    if purpose == "register":
-        pending = storage.pop_pending_registration(email)
-        if not pending:
-            return redirect(url_for("auth_register",
-                error="Registration session expired. Please register again.", email=email))
-        user = storage.create_password_user(email, pending["name"], pending["pwd_hash"])
-        session.pop("otp_flow_email", None)
-        session["uid"] = user["id"]
-        return redirect(url_for("dashboard"))
-    if purpose == "forgot_password":
-        session["reset_email"] = email
-        session["reset_at"]    = _time_module.time()
-        session.pop("otp_flow_email", None)
-        return redirect(url_for("auth_reset_password"))
-    return redirect(url_for("login"))
-
-
-@app.route("/auth/resend-otp", methods=["POST"])
-def auth_resend_otp():
-    email = (session.get("otp_flow_email") or session.get("pending_2fa_email") or "")
-    if not email:
-        return jsonify({"error": "Session expired. Please start again."}), 400
-    purpose = "2fa" if session.get("pending_2fa_email") else "register"
-    otp = mailer.generate_otp()
-    storage.store_otp(email, mailer.hash_otp(otp), purpose=purpose)
-    result = mailer.send_otp(email, otp, purpose)
-    if result:
-        return jsonify({"error": result}), 503
-    return jsonify({"ok": True})
-
-
-# ==========================================================================
-#  Forgot password + reset password
+#  Supabase password reset
 # ==========================================================================
 @app.route("/auth/forgot-password", methods=["GET", "POST"])
 def auth_forgot_password():
@@ -386,113 +252,14 @@ def auth_forgot_password():
         return render_template("forgot_password.html", error=request.args.get("error"))
     email = (request.form.get("email") or "").strip().lower()
     if not email or "@" not in email:
-        return render_template("forgot_password.html",
-                               error="Enter a valid email address.")
-    user = storage.get_user_by_email(email)
-    if not user or not user.get("password_hash"):
-        # Redirect without error to prevent email enumeration, but if mail is
-        # not configured we must surface the config issue to the form
-        if not mailer.is_configured():
-            return render_template("forgot_password.html",
-                                   error="Email is not configured on this server. "
-                                         "Set MAIL_USERNAME and MAIL_PASSWORD to enable password reset.")
-        # Unknown email — redirect anyway (anti-enumeration)
-        return redirect(url_for("auth_verify_otp_page", purpose="forgot_password"))
-    if not mailer.is_configured():
-        return render_template("forgot_password.html",
-                               error="Email is not configured on this server. "
-                                     "Set MAIL_USERNAME and MAIL_PASSWORD to enable password reset.")
-    otp = mailer.generate_otp()
-    storage.store_otp(email, mailer.hash_otp(otp), purpose="forgot_password")
-    result = mailer.send_otp(email, otp, "forgot_password")
-    if result:  # SMTP error
-        return render_template("forgot_password.html", error=result)
-    session["otp_flow_email"] = email
-    # Redirect without revealing whether the email exists (anti-enumeration)
-    return redirect(url_for("auth_verify_otp_page", purpose="forgot_password"))
-
-
-@app.route("/auth/reset-password", methods=["GET", "POST"])
-def auth_reset_password():
-    from werkzeug.security import generate_password_hash
-    reset_email = session.get("reset_email")
-    reset_at    = session.get("reset_at", 0)
-    if not reset_email or (_time_module.time() - reset_at) > 600:
-        return redirect(url_for("auth_forgot_password",
-                                error="Reset session expired. Please start again."))
-    if request.method == "GET":
-        return render_template("reset_password.html", error=request.args.get("error"))
-    pwd  = request.form.get("password", "")
-    conf = request.form.get("confirm", "")
-    if len(pwd) < 8:
-        return render_template("reset_password.html",
-                               error="Password must be at least 8 characters.")
-    if pwd != conf:
-        return render_template("reset_password.html", error="Passwords do not match.")
-    storage.update_password(reset_email, generate_password_hash(pwd, method="pbkdf2:sha256"))
-    session.pop("reset_email", None)
-    session.pop("reset_at",    None)
-    return redirect(url_for("login",
-                            error="✓ Password updated — sign in with your new password."))
-
-
-@app.route("/auth/google")
-def auth_google():
-    if not auth.is_google_configured():
-        return redirect(url_for("login"))
-    state = secrets.token_urlsafe(16)
-    session["oauth_state"] = state
-    return redirect(auth.google_auth_url(_oauth_redirect_uri(), state))
-
-
-_OAUTH_ERROR_HTML = """<!doctype html><html><head><meta charset='utf-8'>
-<title>Sign-in error</title><meta name='viewport' content='width=device-width, initial-scale=1'>
-<style>body{font-family:system-ui,Segoe UI,Roboto,sans-serif;background:#f9fbfd;margin:0;
-display:flex;min-height:100vh;align-items:center;justify-content:center}
-.card{background:#fff;border:1px solid #e8eaed;border-radius:14px;box-shadow:0 1px 3px rgba(60,64,67,.3);
-max-width:560px;padding:32px 36px}.h{font-size:20px;font-weight:500;margin:0 0 10px;color:#3c4043}
-p{color:#5f6368;line-height:1.6}code{background:#f1f3f4;padding:2px 6px;border-radius:4px;font-size:13px}
-a{display:inline-block;margin-top:16px;color:#1a73e8}</style></head>
-<body><div class='card'><p class='h'>Google sign-in could not complete</p>
-<p>{{ detail }}</p>
-<p>The most common cause is a <strong>redirect-URI mismatch</strong>. In the Google Cloud
-console (APIs &amp; Services → Credentials → your OAuth client), add this exact
-authorised redirect URI:</p>
-<p><code>{{ redirect_uri }}</code></p>
-<p>If your server is reached at a different host/port than it sees internally, also set the
-<code>OAUTH_REDIRECT_BASE</code> environment variable to your public URL (e.g.
-<code>http://192.168.29.141:8501</code>) and restart.</p>
-<a href='{{ login_url }}'>← Back to sign in</a></div></body></html>"""
-
-
-@app.route("/auth/google/callback")
-def auth_google_callback():
-    if request.args.get("error"):
-        return render_template_string(
-            _OAUTH_ERROR_HTML, detail=f"Google returned: {request.args.get('error')}",
-            redirect_uri=_oauth_redirect_uri(), login_url=url_for("login")), 400
-    if request.args.get("state") != session.get("oauth_state"):
-        return render_template_string(
-            _OAUTH_ERROR_HTML, detail="The sign-in session expired or the state did not match. "
-            "Please try again.", redirect_uri=_oauth_redirect_uri(), login_url=url_for("login")), 400
-    code = request.args.get("code")
-    if not code:
-        return render_template_string(
-            _OAUTH_ERROR_HTML, detail="No authorization code was returned.",
-            redirect_uri=_oauth_redirect_uri(), login_url=url_for("login")), 400
+        return render_template("forgot_password.html", error="Enter a valid email address.")
+    if not supabase_auth.is_configured():
+        return render_template("forgot_password.html", error="Supabase is not configured.")
     try:
-        profile = auth.google_exchange_code(code, _oauth_redirect_uri())
+        supabase_auth.send_password_reset(email)
     except Exception as exc:  # noqa: BLE001
-        return render_template_string(
-            _OAUTH_ERROR_HTML, detail=f"Token exchange failed: {exc}",
-            redirect_uri=_oauth_redirect_uri(), login_url=url_for("login")), 400
-    if not profile.get("email"):
-        return render_template_string(
-            _OAUTH_ERROR_HTML, detail="Google did not return an email address.",
-            redirect_uri=_oauth_redirect_uri(), login_url=url_for("login")), 400
-    user = storage.upsert_user(**profile)
-    session["uid"] = user["id"]
-    return redirect(url_for("dashboard"))
+        return render_template("forgot_password.html", error=str(exc))
+    return redirect(url_for("login", error="If this email exists, Supabase has sent a password reset link."))
 
 
 @app.route("/logout")
@@ -523,7 +290,6 @@ def notebook(notebook_id):
         is_owner=(nb.get("role") == "owner"),
         owner_email=nb.get("owner_email"),
         collaborators=collaborators,
-        google_enabled=auth.is_google_configured(),
     )
 
 
