@@ -262,6 +262,20 @@ def auth_forgot_password():
     return redirect(url_for("login", error="If this email exists, Supabase has sent a password reset link."))
 
 
+# Page the user lands on after clicking the Supabase reset email link.
+# The recovery token arrives in the URL fragment (#access_token=...&type=recovery),
+# which only the browser sees — so the new-password submit is done client-side
+# directly against Supabase's API. SUPABASE_ANON_KEY is safe to expose to the
+# browser (it's the public key, scoped by Row Level Security).
+@app.route("/auth/reset-password")
+def auth_reset_password():
+    return render_template(
+        "reset_password.html",
+        supabase_url=os.getenv("SUPABASE_URL", "").strip().rstrip("/"),
+        supabase_anon_key=(os.getenv("SUPABASE_ANON_KEY", "") or "").strip(),
+    )
+
+
 @app.route("/logout")
 def logout():
     session.clear()
