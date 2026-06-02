@@ -88,6 +88,7 @@ import agent
 import auth
 import mailer
 import storage
+import supabase_auth
 from kernel import KernelManager
 from manual import AIDL_MANUAL
 
@@ -174,6 +175,7 @@ def login():
         return redirect(url_for("dashboard"))
     return render_template("login.html",
                            google_enabled=auth.is_google_configured(),
+                           supabase_enabled=supabase_auth.is_configured(),
                            error=request.args.get("error"),
                            prefill_email=request.args.get("prefill_email"))
 
@@ -205,6 +207,22 @@ def auth_password_login():
     password = request.form.get("password", "")
     if not email or not password:
         return redirect(url_for("login", error="Email and password are required."))
+
+    # Supabase mode: keep the same login form, but verify the password through
+    # Supabase Auth over HTTPS. No SMTP/Resend OTP is needed on Render.
+    if supabase_auth.is_configured():
+        try:
+            data = supabase_auth.signin(email, password)
+            profile = supabase_auth.profile_from_auth_response(data, fallback_email=email)
+        except Exception as exc:  # noqa: BLE001
+            msg = str(exc) or "Could not sign in with Supabase."
+            if "Email not confirmed" in msg:
+                msg = "Please verify your email from the Supabase confirmation link, then sign in."
+            return redirect(url_for("login", error=msg, prefill_email=email))
+        user = storage.upsert_user(**profile)
+        session["uid"] = user["id"]
+        return redirect(url_for("dashboard"))
+
     user = storage.get_user_by_email(email)
     if not user or not user.get("password_hash"):
         return redirect(url_for("login",
@@ -253,8 +271,27 @@ def auth_register():
     if pwd != conf:
         return rereg("Passwords do not match.")
     existing = storage.get_user_by_email(email)
-    if existing and existing.get("password_hash"):
+    if existing and existing.get("password_hash") and not supabase_auth.is_configured():
         return rereg("An account already exists with that email. Sign in instead.")
+
+    # Supabase mode: keep the same registration form, but let Supabase handle
+    # account creation and email verification. This avoids Resend/Gmail SMTP.
+    if supabase_auth.is_configured():
+        try:
+            data = supabase_auth.signup(email, pwd, name)
+            profile = supabase_auth.profile_from_auth_response(data, fallback_email=email, fallback_name=name)
+        except Exception as exc:  # noqa: BLE001
+            return rereg(str(exc) or "Could not create account with Supabase.")
+        # If Supabase email confirmations are disabled, a session may be returned
+        # immediately. If confirmations are enabled, ask the user to verify first.
+        if data.get("session") or data.get("access_token"):
+            user = storage.upsert_user(**profile)
+            session["uid"] = user["id"]
+            return redirect(url_for("dashboard"))
+        return redirect(url_for("login",
+            error="✓ Account created. Check your email, verify it, then sign in.",
+            prefill_email=email))
+
     pwd_hash = generate_password_hash(pwd, method="pbkdf2:sha256")
     storage.store_pending_registration(email, name, pwd_hash)
     otp = mailer.generate_otp()
