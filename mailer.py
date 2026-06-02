@@ -266,7 +266,8 @@ def _send_resend(to_email, subject, text, html):
     return _http_post(
         "https://api.resend.com/emails",
         {"Authorization": f"Bearer {_cfg['api_key']}",
-         "Content-Type": "application/json"},
+         "Content-Type": "application/json", 
+         "User-Agent": "agentic-colab/1.0"},
         {"from": f"{_cfg['from_name']} <{_cfg['from_email']}>",
          "to": [to_email], "subject": subject, "text": text, "html": html},
     )
