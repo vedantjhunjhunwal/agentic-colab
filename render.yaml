@@ -1,14 +1,44 @@
+# render.yaml — Render Blueprint for Agentic AI DSL Colab (Supabase Auth)
+#
+# Deploy: push this repo to GitHub, then in Render: New → Blueprint → pick repo.
+# Render reads this file and prompts for the secret values marked "sync: false".
+#
+# Docs: https://render.com/docs/blueprint-spec
+
 services:
   - type: web
     name: agentic-colab
-    env: python
-    plan: free
-    buildCommand: pip install -r requirements.txt
+    env: python                # Render auto-detects requirements.txt + Procfile
+    plan: free                 # free tier works fully; data persists via Supabase Postgres
+    region: singapore          # closest Render region to India
+    buildCommand: pip install --upgrade pip && pip install -r requirements.txt
     startCommand: gunicorn --bind 0.0.0.0:$PORT --workers 1 --threads 8 --timeout 300 app:app
+    healthCheckPath: /healthz
+    autoDeploy: true           # redeploy on every git push
+
     envVars:
-      - key: SUPABASE_URL
-        sync: false
-      - key: SUPABASE_ANON_KEY
-        sync: false
+      # --- App config (safe to commit) ---
+      - key: MPLBACKEND
+        value: Agg
+      - key: COLAB_DATA_DIR
+        value: /tmp/colab-data
+      # Flask session secret — Render auto-generates a strong random value
       - key: COLAB_SECRET
         generateValue: true
+
+      # --- Supabase Auth: handles signup, login, email verification, password reset ---
+      # Get these from https://supabase.com → your project → Settings → API
+      - key: SUPABASE_URL         # https://xxxxxxxxx.supabase.co
+        sync: false
+      - key: SUPABASE_ANON_KEY    # the "anon public" key (long JWT)
+        sync: false
+      # Optional: URL Supabase uses after a password-reset email link is clicked.
+      # E.g. https://agentic-colab.onrender.com/login  (set after first deploy)
+      - key: SUPABASE_PASSWORD_REDIRECT
+        sync: false
+
+      # --- Database: users + notebooks persist permanently in Supabase Postgres ---
+      # Get this from Supabase → Project Settings → Database → Connection string
+      # (URI tab; choose "Connection pooling" / "Transaction"). Replace [YOUR-PASSWORD].
+      - key: DATABASE_URL         # postgresql://postgres.xxxx:pwd@aws-...pooler.supabase.com:5432/postgres
+        sync: false

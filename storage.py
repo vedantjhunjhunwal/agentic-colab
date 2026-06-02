@@ -51,7 +51,6 @@ if USE_POSTGRES:
 
     # PRIMARY KEY (conflict target) for each table that uses INSERT OR REPLACE.
     _PG_CONFLICT = {
-        "pending_registrations": "(email)",
         "notebook_shares": "(notebook_id, email)",
     }
 
@@ -134,7 +133,6 @@ def init_db():
             name      TEXT,
             picture   TEXT,
             provider  TEXT,
-            password_hash TEXT,
             created_at REAL
         );
         CREATE TABLE IF NOT EXISTS notebooks (
@@ -153,35 +151,8 @@ def init_db():
             created_at  REAL,
             PRIMARY KEY (notebook_id, email)
         );
-        CREATE TABLE IF NOT EXISTS otp_store (
-            id          TEXT PRIMARY KEY,
-            email       TEXT NOT NULL,
-            otp_hash    TEXT NOT NULL,
-            purpose     TEXT NOT NULL,
-            expires_at  REAL NOT NULL,
-            used        INTEGER DEFAULT 0,
-            created_at  REAL
-        );
-        CREATE TABLE IF NOT EXISTS pending_registrations (
-            email      TEXT PRIMARY KEY,
-            name       TEXT,
-            pwd_hash   TEXT NOT NULL,
-            expires_at REAL NOT NULL,
-            created_at REAL
-        );
         """
     )
-    # Backward-compat migration for older SQLite databases created before the
-    # password_hash column existed. (Fresh DBs already have it from CREATE TABLE.)
-    if USE_POSTGRES:
-        conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash TEXT")
-        conn.commit()
-    else:
-        try:
-            conn.execute("ALTER TABLE users ADD COLUMN password_hash TEXT")
-            conn.commit()
-        except Exception:
-            pass  # column already exists
     conn.commit()
     conn.close()
 
@@ -217,138 +188,12 @@ def upsert_user(email: str, name: str = "", picture: str = "", provider: str = "
 # --------------------------------------------------------------------------
 #  Password-based auth
 # --------------------------------------------------------------------------
-def create_password_user(email: str, name: str, password_hash: str) -> Dict:
-    """Create (or convert) a user with a password hash."""
-    email = email.strip().lower()
-    conn = _connect()
-    existing = conn.execute("SELECT id FROM users WHERE email = ?", (email,)).fetchone()
-    if existing:
-        conn.execute(
-            "UPDATE users SET name = COALESCE(NULLIF(?, ''), name), "
-            "password_hash = ?, provider = 'password' WHERE email = ?",
-            (name, password_hash, email),
-        )
-        conn.commit()
-        row = conn.execute("SELECT * FROM users WHERE email = ?", (email,)).fetchone()
-    else:
-        uid = "u_" + secrets.token_hex(8)
-        conn.execute(
-            "INSERT INTO users (id, email, name, picture, provider, password_hash, created_at) "
-            "VALUES (?, ?, ?, '', 'password', ?, ?)",
-            (uid, email, name or email.split("@")[0], password_hash, _now()),
-        )
-        conn.commit()
-        row = conn.execute("SELECT * FROM users WHERE id = ?", (uid,)).fetchone()
-    conn.close()
-    return dict(row)
 
 
 def get_user_by_email(email: str) -> Optional[Dict]:
     email = email.strip().lower()
     conn = _connect()
     row = conn.execute("SELECT * FROM users WHERE email = ?", (email,)).fetchone()
-    conn.close()
-    return dict(row) if row else None
-
-
-def update_password(email: str, new_hash: str) -> bool:
-    email = email.strip().lower()
-    conn = _connect()
-    cur = conn.execute(
-        "UPDATE users SET password_hash = ? WHERE email = ?", (new_hash, email)
-    )
-    conn.commit()
-    changed = cur.rowcount > 0
-    conn.close()
-    return changed
-
-
-# --------------------------------------------------------------------------
-#  OTP store
-# --------------------------------------------------------------------------
-def store_otp(email: str, otp_hash: str, purpose: str, ttl: int = 300) -> str:
-    """Persist an OTP hash, invalidating any previous OTPs for the same
-    email+purpose. Returns the new record id."""
-    email = email.strip().lower()
-    conn = _connect()
-    # Expire previous OTPs for same email+purpose
-    conn.execute(
-        "UPDATE otp_store SET used = 1 WHERE email = ? AND purpose = ? AND used = 0",
-        (email, purpose),
-    )
-    otp_id = secrets.token_hex(16)
-    conn.execute(
-        "INSERT INTO otp_store (id, email, otp_hash, purpose, expires_at, used, created_at) "
-        "VALUES (?, ?, ?, ?, ?, 0, ?)",
-        (otp_id, email, otp_hash, purpose, _now() + ttl, _now()),
-    )
-    conn.commit()
-    conn.close()
-    return otp_id
-
-
-def verify_and_consume_otp(email: str, otp_hash: str, purpose: str) -> str:
-    """Verify an OTP hash and mark it used.
-
-    Returns 'ok', 'expired', 'invalid', or 'not_found'.
-    """
-    email = email.strip().lower()
-    conn = _connect()
-    row = conn.execute(
-        "SELECT id, otp_hash, expires_at, used FROM otp_store "
-        "WHERE email = ? AND purpose = ? AND used = 0 "
-        "ORDER BY created_at DESC LIMIT 1",
-        (email, purpose),
-    ).fetchone()
-    if not row:
-        conn.close()
-        return "not_found"
-    if _now() > row["expires_at"]:
-        conn.close()
-        return "expired"
-    if not secrets.compare_digest(row["otp_hash"], otp_hash):
-        conn.close()
-        return "invalid"
-    conn.execute("UPDATE otp_store SET used = 1 WHERE id = ?", (row["id"],))
-    conn.commit()
-    conn.close()
-    return "ok"
-
-
-def cleanup_expired_otps():
-    conn = _connect()
-    conn.execute("DELETE FROM otp_store WHERE expires_at < ?", (_now() - 3600,))
-    conn.execute("DELETE FROM pending_registrations WHERE expires_at < ?", (_now(),))
-    conn.commit()
-    conn.close()
-
-
-# --------------------------------------------------------------------------
-#  Pending registrations (email → password_hash, awaiting OTP confirmation)
-# --------------------------------------------------------------------------
-def store_pending_registration(email: str, name: str, pwd_hash: str, ttl: int = 600):
-    email = email.strip().lower()
-    conn = _connect()
-    conn.execute(
-        "INSERT OR REPLACE INTO pending_registrations "
-        "(email, name, pwd_hash, expires_at, created_at) VALUES (?, ?, ?, ?, ?)",
-        (email, name, pwd_hash, _now() + ttl, _now()),
-    )
-    conn.commit()
-    conn.close()
-
-
-def pop_pending_registration(email: str) -> Optional[Dict]:
-    """Return and delete a pending registration if it exists and hasn't expired."""
-    email = email.strip().lower()
-    conn = _connect()
-    row = conn.execute(
-        "SELECT * FROM pending_registrations WHERE email = ? AND expires_at > ?",
-        (email, _now()),
-    ).fetchone()
-    if row:
-        conn.execute("DELETE FROM pending_registrations WHERE email = ?", (email,))
-        conn.commit()
     conn.close()
     return dict(row) if row else None
 
