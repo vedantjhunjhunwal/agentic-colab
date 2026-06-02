@@ -8,3 +8,4 @@ numpy>=1.26
 matplotlib>=3.8
 Pillow>=10.0
 seaborn>=0.13
+supabase
